@@ -1,0 +1,16 @@
+{
+  "name": "SAOnline",
+  "version": "0.1.0",
+  "description": "A plugin for ModLoader64 that aims to create true online multiplayer support to Sonic Adventure DX & Sonic Adventure 2 Battle.",
+  "main": "index.js",
+  "repository": {},
+  "keywords": [],
+  "author": "Psi-Hate, JerryWester",
+  "license": "ISC",
+  "bugs": {},
+  "modloader64_deps": {
+    "SACore": "https://github.com/hylian-modding/SACore.git"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

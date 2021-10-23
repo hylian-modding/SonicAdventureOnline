@@ -1,0 +1,20 @@
+{
+  "name": "SAOnline",
+  "version": "3.1.0-nightly@f2f9b59",
+  "date": "Sat, 23 Oct 2021 07:24:23 GMT",
+  "commit": "f2f9b59",
+  "description": "",
+  "main": "SAOnline.js",
+  "author": "Psi-Hate, JerryWester",
+  "credits": "\nX-Hax crew, Chao Island",
+  "license": "GPL-3.0",
+  "core": [
+    "SACore"
+  ],
+  "modloader64_deps": {
+    "SACore": "https://github.com/hylian-modding/SACore.git"
+  },
+  "dependencies": {
+    "bson": "^4.5.1"
+  }
+}
