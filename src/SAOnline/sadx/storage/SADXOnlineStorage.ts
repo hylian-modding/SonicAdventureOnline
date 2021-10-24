@@ -1,4 +1,5 @@
-import { ITime, ITwinkleCircuitTimes, IAdventureData } from 'SACore/API/SADX/SADX_API';
+import { ITime } from 'SACore/API/Common/ISACommonAPI';
+import { ITwinkleCircuitTimes, IAdventureData } from 'SACore/API/SADX/SADX_API';
 import { IFakeArray } from 'SACore/src/Common/types/FakeArray';
 import { ISADXSyncSave } from '../../common/types/SADXAliases';
 import { SADXOnlineStorageBase } from './SADXOnlineStorageBase';
