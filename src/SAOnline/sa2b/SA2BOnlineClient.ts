@@ -64,7 +64,7 @@ export default class SA2BOnlineClient {
     }
 
     updateSave() {
-        if (this.core.SA2B!.helper.isTitleScreen() || !this.core.SA2B!.helper.isLevelNumberValid() || this.core.SA2B!.helper.isPaused() || !this.clientStorage.first_time_sync) return;
+        if (this.core.SA2B!.helper.isTitleScreen() || !this.core.SA2B!.helper.isMenuSafe() || this.core.SA2B!.helper.isPaused() || !this.clientStorage.first_time_sync) return;
         let save = this.clientStorage.saveManager.createSave();
         if (this.syncTimer > this.synctimerMax) {
             this.clientStorage.lastPushHash = this.ModLoader.utils.hashBuffer(Buffer.from("RESET"));
@@ -104,6 +104,20 @@ export default class SA2BOnlineClient {
     //------------------------------
     // Level handling
     //------------------------------
+
+    @EventHandler(SA2BEvents.ON_SAVE_LOADED)
+    onSaveLoad(Level: number) {
+        if (!this.clientStorage.first_time_sync && !this.syncPending) {
+
+            this.ModLoader.utils.setTimeoutFrames(() => {
+                if (this.LobbyConfig.data_syncing) {
+                    this.ModLoader.me.data["world"] = this.clientStorage.world;
+                    this.ModLoader.clientSide.sendPacket(new SAO_DownloadRequestPacket(this.ModLoader.clientLobby, new SA2BOSaveData(this.core.SA2B!, this.ModLoader).createSave()));
+                }
+            }, 50);
+            this.syncPending = true;
+        }
+    }
 
     @EventHandler(SA2BEvents.ON_LEVEL_CHANGE)
     onLevelChange(Level: number) {
@@ -171,7 +185,7 @@ export default class SA2BOnlineClient {
     onDownloadPacket_client(packet: SAO_DownloadResponsePacket) {
         if (
             this.core.SA2B!.helper.isTitleScreen() ||
-            !this.core.SA2B!.helper.isLevelNumberValid()
+            !this.core.SA2B!.helper.isMenuSafe()
         ) {
             return;
         }
@@ -194,8 +208,8 @@ export default class SA2BOnlineClient {
     onSaveUpdate(packet: SAO_UpdateSaveDataPacket) {
         if (
             this.core.SA2B!.helper.isTitleScreen() ||
-            !this.core.SA2B!.helper.isMenuSafe() ||
-            !this.core.SA2B!.helper.isLevelNumberValid()
+            !this.core.SA2B!.helper.isMenuSafe()
+            //|| !this.core.SA2B!.helper.isLevelNumberValid()
         ) {
             return;
         }

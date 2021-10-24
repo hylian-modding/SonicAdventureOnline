@@ -10,7 +10,7 @@ import { Preinit, Init, Postinit, onTick } from "modloader64_api/PluginLifecycle
 import { ParentReference, SidedProxy, ProxySide } from "modloader64_api/SidedProxy/SidedProxy";
 import { ISA_Main } from "SACore/API/Common/ISA_Main";
 import { SupportedGames } from "SACore/src/Common/types/GameAliases";
-import { SAO_UpdateSaveDataPacket, SAO_DownloadRequestPacket, SAO_LevelPacket, SAO_LevelRequestPacket, SAO_DownloadResponsePacket } from "../common/network/SAOPackets";
+import { SAO_UpdateSaveDataPacket, SAO_DownloadRequestPacket, SAO_LevelPacket, SAO_LevelRequestPacket, SAO_DownloadResponsePacket, SAO_RingPacket } from "../common/network/SAOPackets";
 import { ISADXOnlineLobbyConfig, SADXOnlineConfigCategory } from "./SADXOnline";
 import { SADXOSaveData } from "./save/SADXOnlineSaveData";
 import { SADXOnlineStorage } from "./storage/SADXOnlineStorage";
@@ -38,6 +38,8 @@ export default class SADXOnlineClient {
     synctimerMax: number = 60 * 20;
     syncPending: boolean = false;
 
+    lastRings: number = 0;
+
     @Preinit()
     preinit() {
         this.config = this.ModLoader.config.registerConfigCategory("SADXOnline") as SADXOnlineConfigCategory;
@@ -64,8 +66,16 @@ export default class SADXOnlineClient {
     }
 
     updateSave() {
-        if (this.core.SADX!.helper.isTitleScreen() || !this.core.SADX!.helper.isLevelNumberValid() || this.core.SADX!.helper.isPaused() || !this.clientStorage.first_time_sync) return;
+        if (this.core.SADX!.helper.isTitleScreen() || this.core.SADX!.helper.isDemoMode() || !this.clientStorage.first_time_sync) return;
         let save = this.clientStorage.saveManager.createSave();
+
+        //let rings = this.core.SADX!.save.black_market_rings;
+        //if(rings !== this.lastRings) {
+        //    this.ModLoader.logger.info(`Rings changed with delta ` + (rings - this.lastRings).toString());
+        //    this.ModLoader.clientSide.sendPacket( new SAO_RingPacket(rings - this.lastRings, this.ModLoader.clientLobby))
+        //    this.lastRings = rings;
+        //}
+
         if (this.syncTimer > this.synctimerMax) {
             this.clientStorage.lastPushHash = this.ModLoader.utils.hashBuffer(Buffer.from("RESET"));
             this.ModLoader.logger.debug("Forcing resync due to timeout.");
@@ -91,17 +101,33 @@ export default class SADXOnlineClient {
 
     @EventHandler(EventsClient.CONFIGURE_LOBBY)
     onLobbySetup(lobby: LobbyData): void {
+        lobby.data['SAOnline:data_syncing'] = true;
     }
 
     @EventHandler(EventsClient.ON_LOBBY_JOIN)
     onJoinedLobby(lobby: LobbyData): void {
         this.clientStorage.first_time_sync = false;
+        this.LobbyConfig.data_syncing = lobby.data['SAOnline:data_syncing'];
         this.ModLoader.logger.info('SADXOnline settings inherited from lobby.');
     }
 
     //------------------------------
     // Level handling
     //------------------------------
+
+    @EventHandler(SADXEvents.ON_SAVE_LOADED)
+    onSaveLoad(Level: number) {
+        if (!this.clientStorage.first_time_sync && !this.syncPending) {
+
+            this.ModLoader.utils.setTimeoutFrames(() => {
+                if (this.LobbyConfig.data_syncing) {
+                    this.ModLoader.me.data["world"] = this.clientStorage.world;
+                    this.ModLoader.clientSide.sendPacket(new SAO_DownloadRequestPacket(this.ModLoader.clientLobby, new SADXOSaveData(this.core.SADX!, this.ModLoader).createSave()));
+                }
+            }, 50);
+            this.syncPending = true;
+        }
+    }
 
     @EventHandler(SADXEvents.ON_LEVEL_CHANGE)
     onLevelChange(Level: number) {
@@ -141,9 +167,7 @@ export default class SADXOnlineClient {
             'client receive: Player ' +
             packet.player.nickname +
             ' moved to Level ' +
-            this.clientStorage.localization[
-            this.clientStorage.level_keys[packet.Level]
-            ] +
+            packet.Level +
             '.'
         );
         bus.emit(
@@ -171,7 +195,7 @@ export default class SADXOnlineClient {
     onDownloadPacket_client(packet: SAO_DownloadResponsePacket) {
         if (
             this.core.SADX!.helper.isTitleScreen() ||
-            !this.core.SADX!.helper.isLevelNumberValid()
+            this.core.SADX!.helper.isDemoMode()
         ) {
             return;
         }
@@ -194,29 +218,37 @@ export default class SADXOnlineClient {
     onSaveUpdate(packet: SAO_UpdateSaveDataPacket) {
         if (
             this.core.SADX!.helper.isTitleScreen() ||
-            !this.core.SADX!.helper.isLevelNumberValid()
+            this.core.SADX!.helper.isDemoMode()
+            //|| !this.core.SADX!.helper.isLevelNumberValid()
         ) {
             return;
         }
         if (packet.world !== this.clientStorage.world) {
             return;
         }
+        //console.log(`packet recieved: ${packet.save}`);
         this.clientStorage.saveManager.applySave(packet.save);
         // Update hash.
         this.clientStorage.saveManager.createSave();
         this.clientStorage.lastPushHash = this.clientStorage.saveManager.hash;
     }
 
-    @EventHandler(ModLoaderEvents.ON_SOFT_RESET_PRE)
-    onReset(evt: any) {
-        this.clientStorage.first_time_sync = false;
+    @NetworkHandler('SAO_RingPacket')
+    onRings(packet: SAO_RingPacket) {
+        this.lastRings += packet.delta;
+        this.core.SADX!.save.black_market_rings += packet.delta;
     }
 
     @onTick()
     onTick() {
+        if ((this.core.SADX!.global.global_frame_count % 300) === 0) {
+            //console.log(`isTitleScreen(): ${this.core.SADX!.helper.isTitleScreen()}`);
+            //console.log(`isMenuSafe(): ${this.core.SADX!.helper.isMenuSafe()}`);
+            //console.log(`isLevelNumberValid(): ${this.core.SADX!.helper.isLevelNumberValid()} | Level: ${this.core.SADX!.global.current_level}`);
+        }
         if (
             !this.core.SADX!.helper.isTitleScreen() &&
-            this.core.SADX!.helper.isInGame()
+            !this.core.SADX!.helper.isDemoMode()
         ) {
             if (!this.core.SADX!.helper.isPaused()) {
                 this.ModLoader.me.data["world"] = this.clientStorage.world;
@@ -227,7 +259,9 @@ export default class SADXOnlineClient {
                     this.syncTimer++;
                 }
             }
+            //else console.log(`isPaused(): ${this.core.SADX!.helper.isPaused()}`);
         }
+        
     }
 
     inventoryUpdateTick() {

@@ -8,7 +8,7 @@ import { IPacketHeader, LobbyData, ServerNetworkHandler } from "modloader64_api/
 import { Preinit } from "modloader64_api/PluginLifecycle";
 import { ParentReference, SidedProxy, ProxySide } from "modloader64_api/SidedProxy/SidedProxy";
 import { ISA_Main } from "SACore/API/Common/ISA_Main";
-import { SAO_LevelPacket, SAO_DownloadRequestPacket, SAO_DownloadResponsePacket, SAO_UpdateSaveDataPacket, SAO_ErrorPacket } from "../common/network/SAOPackets";
+import { SAO_LevelPacket, SAO_DownloadRequestPacket, SAO_DownloadResponsePacket, SAO_UpdateSaveDataPacket, SAO_ErrorPacket, SAO_RingPacket } from "../common/network/SAOPackets";
 import { SADXOSaveData } from "./save/SADXOnlineSaveData";
 import { SADXOnlineStorage, SADXOnlineSave_Server } from "./storage/SADXOnlineStorage";
 import SA_Serialize from "@SAOnline/common/storage/SA_Serialize";
@@ -156,6 +156,38 @@ export default class SADXOnlineServer {
         }
     }
 
+    @ServerNetworkHandler('SAO_RingPacket')
+    onRings(packet: SAO_RingPacket) {
+        let storage: SADXOnlineStorage = this.ModLoader.lobbyManager.getLobbyStorage(
+            packet.lobby,
+            this.parent
+        ) as SADXOnlineStorage;
+        if (storage === null) {
+            return;
+        }
+
+        this.ModLoader.logger.info("Got rings");
+
+        let lastRings = storage.rings;
+
+        storage.rings += packet.delta;
+
+        if (storage.rings < 0) storage.rings = 0;
+        if (storage.rings > 9999999) storage.rings = 9999999;
+
+        if (storage.rings - lastRings !== 0) {
+            Object.keys(storage.players).forEach((key: string) => {
+                if (storage.players[key] === storage.players[packet.player.uuid]) {
+                    if (storage.networkPlayerInstances[key].uuid !== packet.player.uuid) {
+                        this.ModLoader.serverSide.sendPacketToSpecificPlayer(
+                            new SAO_RingPacket(storage.rings - lastRings, packet.lobby),
+                            storage.networkPlayerInstances[key]
+                        );
+                    }
+                }
+            });
+        }
+    }
     //------------------------------
     // Flag Syncing
     //------------------------------
@@ -170,10 +202,10 @@ export default class SADXOnlineServer {
             return;
         }
         if (typeof storage.worlds[packet.player.data.world] === 'undefined') {
-            if (packet.player.data.world === undefined){
+            if (packet.player.data.world === undefined) {
                 this.ModLoader.serverSide.sendPacket(new SAO_ErrorPacket("The server has encountered an error with your world. (world id is undefined)", packet.lobby));
                 return;
-            }else{
+            } else {
                 storage.worlds[packet.player.data.world] = new SADXOnlineSave_Server();
             }
         }

@@ -23,7 +23,6 @@ export class SADXOSaveData implements ISaveSyncData {
   private generateWrapper(): ISADXSyncSave {
     let obj: any = {};
     let keys = [
-      'rings'
     ];
     obj = JSON.parse(JSON.stringify(this.core.save));
     let obj2: any = {};
@@ -103,7 +102,7 @@ export class SADXOSaveData implements ISaveSyncData {
     try {
       let obj: ISADXSyncSave = SA_Serialize.deserializeSync(save);
 
-      storage.rings = obj.rings;
+      //storage.black_market_rings = obj.black_market_rings;
 
     } catch (err: any) {
       console.log(err.stack);
@@ -119,9 +118,9 @@ export class SADXOSaveData implements ISaveSyncData {
         //  return;
         //}
 
-      if (obj.rings !== storage.rings) {
-        storage.rings = obj.rings;
-      }
+        //if (obj.black_market_rings !== storage.black_market_rings) {
+        //  storage.black_market_rings = obj.black_market_rings;
+        //}
         
         accept(true);
       }).catch(() => {

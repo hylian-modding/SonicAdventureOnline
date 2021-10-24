@@ -5,6 +5,19 @@ import { INetworkPlayer } from 'modloader64_api/NetworkHandler';
 import { Level } from '../types/Types';
 import { ChaoGarden } from 'SACore/src/Common/Chao/ChaoGarden';
 
+export class PacketWithTimeStamp extends Packet{
+  timestamp: number = Date.now();
+}
+
+export class SAO_RingPacket extends PacketWithTimeStamp {
+  delta: number;
+
+  constructor(delta: number, lobby: string){
+    super('SAO_RingPacket', 'SAOnline', lobby, true);
+    this.delta = delta;
+  }
+}
+
 export class SAO_LevelPacket extends Packet {
   Level: Level;
 
