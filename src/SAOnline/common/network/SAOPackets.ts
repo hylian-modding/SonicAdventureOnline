@@ -3,7 +3,7 @@ import {
 } from 'modloader64_api/ModLoaderDefaultImpls';
 import { INetworkPlayer } from 'modloader64_api/NetworkHandler';
 import { Level } from '../types/Types';
-import { ChaoGarden } from 'SACore/src/Common/Chao/ChaoGarden';
+import { IChaoGarden } from 'SACore/API/Common/Chao/ChaoAPI';
 
 export class PacketWithTimeStamp extends Packet{
   timestamp: number = Date.now();
@@ -15,6 +15,15 @@ export class SAO_RingPacket extends PacketWithTimeStamp {
   constructor(delta: number, lobby: string){
     super('SAO_RingPacket', 'SAOnline', lobby, true);
     this.delta = delta;
+  }
+}
+
+export class SAO_ChaoPacket extends PacketWithTimeStamp {
+  chao: Pick<IChaoGarden, 'chaos'>;
+
+  constructor(chao: Pick<IChaoGarden, 'chaos'>, lobby: string){
+    super('SAO_ChaoPacket', 'SAOnline', lobby, true);
+    this.chao = chao;
   }
 }
 
@@ -66,16 +75,6 @@ export class SAO_UpdateSaveDataPacket extends Packet {
   }
 }
 
-export class SA2B_ChaoPacket extends Packet {
-  chaoData: ChaoGarden;
-  hash: number;
-
-  constructor(chaoData: ChaoGarden, hash: number, lobby: string) {
-    super('SAO_PermFlagsPacket', 'SAOnline', lobby, false);
-    this.chaoData = chaoData;
-    this.hash = hash;
-  }
-}
 export class SAO_ErrorPacket extends Packet{
 
   message: string;

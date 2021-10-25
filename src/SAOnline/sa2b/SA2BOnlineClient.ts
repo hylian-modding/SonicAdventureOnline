@@ -10,7 +10,7 @@ import { Preinit, Init, Postinit, onTick } from "modloader64_api/PluginLifecycle
 import { ParentReference, SidedProxy, ProxySide } from "modloader64_api/SidedProxy/SidedProxy";
 import { ISA_Main } from "SACore/API/Common/ISA_Main";
 import { SupportedGames } from "SACore/src/Common/types/GameAliases";
-import { SAO_UpdateSaveDataPacket, SAO_DownloadRequestPacket, SAO_LevelPacket, SAO_LevelRequestPacket, SAO_DownloadResponsePacket } from "../common/network/SAOPackets";
+import { SAO_UpdateSaveDataPacket, SAO_DownloadRequestPacket, SAO_LevelPacket, SAO_LevelRequestPacket, SAO_DownloadResponsePacket, SAO_ChaoPacket } from "../common/network/SAOPackets";
 import { ISA2BOnlineLobbyConfig, SA2BOnlineConfigCategory } from "./SA2BOnline";
 import { SA2BOSaveData } from "./save/SA2BOnlineSaveData";
 import { SA2BOnlineStorage } from "./storage/SA2BOnlineStorage";
@@ -18,6 +18,10 @@ import { SA2BOnlineStorageClient } from "./storage/SA2BOnlineStorageClient";
 import fs from 'fs';
 import { SA2BEvents } from "SACore/API/SA2B/SA2B_API";
 import { SAO_PRIVATE_EVENTS } from "@SAOnline/common/api/InternalAPI";
+import { ChaoGarden as Garden, IChaoGarden } from "SACore/API/Common/Chao/ChaoAPI";
+import { ChaoGarden } from "SACore/src/Common/Chao/ChaoGarden";
+import { SA2BChaoGardenStorage } from "./storage/SA2BOnlineStorageBase";
+import SA_Serialize from "@SAOnline/common/storage/SA_Serialize";
 
 export default class SA2BOnlineClient {
     @InjectCore()
@@ -37,6 +41,8 @@ export default class SA2BOnlineClient {
     syncTimer: number = 0;
     synctimerMax: number = 60 * 20;
     syncPending: boolean = false;
+    timestamp: number = -1;
+    isChaoSafe: boolean = false;
 
     @Preinit()
     preinit() {
@@ -58,22 +64,32 @@ export default class SA2BOnlineClient {
         status.partySize = 1;
         this.ModLoader.gui.setDiscordStatus(status);
         this.clientStorage.saveManager = new SA2BOSaveData(this.core.SA2B!, this.ModLoader);
+        this.clientStorage.chao = new SA2BChaoGardenStorage();
         this.ModLoader.utils.setIntervalFrames(() => {
             this.inventoryUpdateTick();
         }, 20);
     }
 
+    chao_data() { return this.ModLoader.emulator.rdramRead32(0x803AD80C) + 0x48E4; }
+
     updateSave() {
         if (this.core.SA2B!.helper.isTitleScreen() || !this.core.SA2B!.helper.isMenuSafe() || this.core.SA2B!.helper.isPaused() || !this.clientStorage.first_time_sync) return;
+
         let save = this.clientStorage.saveManager.createSave();
+        if (this.isChaoSafe) this.clientStorage.chao = this.core.SA2B!.chao;
+
         if (this.syncTimer > this.synctimerMax) {
             this.clientStorage.lastPushHash = this.ModLoader.utils.hashBuffer(Buffer.from("RESET"));
-            this.ModLoader.logger.debug("Forcing resync due to timeout.");
+            //this.ModLoader.logger.debug("Forcing resync due to timeout.");
         }
         if (this.clientStorage.lastPushHash !== this.clientStorage.saveManager.hash) {
             this.ModLoader.privateBus.emit(SAO_PRIVATE_EVENTS.DOING_SYNC_CHECK, {});
             let packet = new SAO_UpdateSaveDataPacket(this.ModLoader.clientLobby, save, this.clientStorage.world);
             this.ModLoader.clientSide.sendPacket(packet);
+            if (this.isChaoSafe) {
+                let chaoPacket = new SAO_ChaoPacket(this.clientStorage.chao, this.ModLoader.clientLobby);
+                this.ModLoader.clientSide.sendPacket(chaoPacket);
+            }
             this.clientStorage.lastPushHash = this.clientStorage.saveManager.hash;
             this.syncTimer = 0;
         }
@@ -222,6 +238,53 @@ export default class SA2BOnlineClient {
         this.clientStorage.lastPushHash = this.clientStorage.saveManager.hash;
     }
 
+    //Chao Handling
+    @NetworkHandler('SAO_ChaoPacket')
+    onChao(packet: SAO_ChaoPacket) {
+        //packet.chao.chaos = SA_Serialize.FixArray(packet.chao.chaos);
+        //console.log(packet);
+        for (let i = 0; i < this.core.SA2B!.chao.chaos.length; i++) {
+            let incoming = packet.chao.chaos[i];
+            let save = this.core.SA2B!.chao.chaos[i];
+            if (incoming.garden !== Garden.UNDEFINED) {
+                Object.keys(incoming).forEach((key: string) => {
+                    if (typeof incoming[key] === 'string') {
+                        if (incoming[key] !== save[key]) 
+                        if(incoming[key] !== ""){
+                            save[key] = incoming[key];
+                        }
+                    }
+                    if (typeof incoming[key] === 'number') {
+                        const manual = [
+                            incoming.swim_level, incoming.fly_level,
+                            incoming.run_level, incoming.power_run,
+                            incoming.stamina_level, incoming.luck_level,
+                            incoming.intelligence_level, incoming.unknown_level,
+                            incoming.swim_fraction, incoming.fly_fraction,
+                            incoming.run_fraction, incoming.power_run,
+                            incoming.stamina_fraction, incoming.lucky_fraction,
+                            incoming.intelligence_fraction, incoming.unknown_fraction,
+                            incoming.garden, incoming.type, incoming.sa2b_skills,
+                            incoming.sa2b_toys, incoming.sa2b_character_bonds,
+                            incoming.evolution_progress, incoming.happiness,
+                            incoming.alignment, incoming.medal
+                        ]
+                        const blacklist = [save.pointer];
+                        if (!blacklist.includes(save[key])) {
+                            if (manual.includes(save[key])) {
+                                save[key] = incoming[key];
+                            }
+                            else {
+                                //save[key] += incoming[key];
+                            }
+                        }
+
+                    }
+                });
+            }
+        }
+    }
+
     @onTick()
     onTick() {
         if ((this.core.SA2B!.global.global_frame_count % 300) === 0) {
@@ -241,10 +304,16 @@ export default class SA2BOnlineClient {
                 if (this.LobbyConfig.data_syncing) {
                     this.syncTimer++;
                 }
+                if (this.core.SA2B!.helper.isInGame() && this.core.SA2B!.global.current_level === 90) {
+                    this.isChaoSafe = true;
+                }
+                else {
+                    this.isChaoSafe = false;
+                }
             }
-            //else console.log(`isPaused(): ${this.core.SA2B!.helper.isPaused()}`);
+            else console.log(`isPaused(): ${this.core.SA2B!.helper.isPaused()}`);
         }
-        
+
     }
 
     inventoryUpdateTick() {
